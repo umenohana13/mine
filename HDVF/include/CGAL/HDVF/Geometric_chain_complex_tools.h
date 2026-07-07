@@ -23,9 +23,11 @@
 #include <CGAL/make_conforming_constrained_Delaunay_triangulation_3.h>
 #include <CGAL/HDVF/Simplicial_chain_complex.h>
 #include <CGAL/HDVF/Cubical_chain_complex.h>
+#include <CGAL/HDVF/Simplex.h>
 #include <CGAL/HDVF/Hdvf_core.h>
 #include <CGAL/HDVF/Hdvf_persistence.h>
 #include <CGAL/HDVF/Hdvf_duality.h>
+#include <CGAL/HDVF/Hdvf_relative.h>
 #include <CGAL/HDVF/Sub_chain_complex_mask.h>
 #include <CGAL/HDVF/Mesh_object_io.h>
 #include <CGAL/HDVF/Surface_mesh_io.h>
@@ -277,6 +279,63 @@ void write_VTK (const Homological_discrete_vector_field::Hdvf_duality<ChainCompl
     }
 }
 
+// Hdvf_relative vtk export
+
+/** \brief Exports all the `HDVF_relative` information of a geometric chain complex to vtk files.
+ *
+ * Export PSC labels and homology/cohomology generators (depending on HDVF options) associated to each persistent intervals to vtk files.
+ *
+ * \param hdvf Reference to the HDVF exported.
+ * \param complex Underlying geometric chain complex.
+ * \param filename Prefix of all generated files.
+ * \param co_faces Export the cohomology generator or its co-faces (sometimes more convenient for visualisation).
+ */
+
+template <typename ChainComplex, typename VertexIdType = size_t>
+void write_VTK (const Homological_discrete_vector_field::Hdvf_relative<ChainComplex> &hdvf, const ChainComplex &complex, std::string filename = "test", bool co_faces = false) {
+    typedef typename ChainComplex::Coefficient_ring Coefficient_ring;
+    typedef Homological_discrete_vector_field::Hdvf_relative<ChainComplex> HDVF_parent;
+    // Export PSC labelling
+    std::string outfile(filename+"_PSC.vtk") ;
+    std::vector<std::vector<int> > labels = hdvf.psc_labels() ;
+    ChainComplex::chain_complex_to_vtk(complex, outfile, &labels) ;
+
+    if (hdvf.hdvf_opts() != Homological_discrete_vector_field::OPT_BND) {
+        // Export generators of all critical cells
+        std::vector<std::vector<size_t> > criticals(hdvf.psc_flags(Homological_discrete_vector_field::CRITICAL)) ;
+        for (int q = 0; q <= complex.dimension(); ++q) {
+            for (size_t c : criticals.at(q)) {
+                // Homology generators
+                if (hdvf.hdvf_opts() & (Homological_discrete_vector_field::OPT_FULL | Homological_discrete_vector_field::OPT_G)) {
+                    std::string outfile_g(filename+"_hom_"+std::to_string(c)+"_dim_"+std::to_string(q)+".vtk") ;
+                    //                    std::vector<std::vector<size_t> > labels = hdvf.export_label(G,c,q) ;
+                    OSM::Sparse_chain<Coefficient_ring,OSM::COLUMN> chain(hdvf.homology_chain(c,q)) ;
+                    ChainComplex::chain_to_vtk(complex, outfile_g, chain, q, c) ;
+                }
+                // Cohomology generators
+                if (hdvf.hdvf_opts() & (Homological_discrete_vector_field::OPT_FULL | Homological_discrete_vector_field::OPT_F)) {
+                    std::string outfile_f(filename+"_cohom_"+std::to_string(c)+"_dim_"+std::to_string(q)+".vtk") ;
+                    OSM::Sparse_chain<Coefficient_ring,OSM::COLUMN> chain(hdvf.cohomology_chain(c, q)) ;
+                    if (!co_faces) {
+                        ChainComplex::chain_to_vtk(complex, outfile_f, chain, q, c) ;
+                    }
+                    else {
+                        // Compute co-faces
+                        if (q < complex.dimension()) {
+                            // Restrict the cofaces of the cohomology generator to the current sub chain complex
+                            OSM::Sparse_chain<Coefficient_ring,OSM::COLUMN> cofaces_chain(complex.cofaces_chain(chain, q)) ;
+                            Homological_discrete_vector_field::Sub_chain_complex_mask<ChainComplex> sub(hdvf.get_current_mask());
+                            sub.screen_chain(cofaces_chain, q+1);
+                            // Display
+                            ChainComplex::chain_to_vtk(complex, outfile_f, cofaces_chain, q+1, c) ;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * \brief Exports a model of `GeometricChainComplex` (plus, optionally, labels) to a VTK file.
  *
@@ -308,6 +367,62 @@ static void write_VTK(const Chain_complex &K, const std::string &filename, const
 template <typename Chain_complex>
 void write_VTK(const Chain_complex &K, const std::string &filename, const OSM::Sparse_chain<typename Chain_complex::Coefficient_ring, OSM::COLUMN>& chain, int q, size_t cellId = -1) {
     Chain_complex::chain_to_vtk(K, filename, chain, q, cellId);
+}
+
+/**
+ * \brief Loads a .sub file into a Sub_chain_complex_mask (for relative homology).
+ */
+
+template <typename ChainComplex>
+Homological_discrete_vector_field::Sub_chain_complex_mask<ChainComplex> read_SUB(const ChainComplex &K, const std::string &filename, bool is_sub_complex = true) {
+    using IOCell = std::vector<size_t>; 
+    size_t dim(K.dimension());
+
+    std::vector<std::vector<int> > cells_loaded;
+    cells_loaded.resize(dim+1);
+    // Read cells from the file
+    std::ifstream infile(filename);
+    if(!infile.is_open()) {
+        // failed to open the file
+        std::cerr << "Warning: file " << filename << " does not exist" << std::endl ;
+        throw std::runtime_error("Warning: file "+filename+" does not exist");
+    }
+
+    std::size_t line_number = 0;
+    while ( !(infile.eof()) ) {
+        std::string line;
+        getline( infile, line );
+        // Check that line is sanitized. If not, throw.
+        for ( size_t i = 0; i < line.size(); ++ i ) {
+            if ( ! ( std::isspace(line[i]) || std::isdigit(line[i]) ) ) {
+                std::cerr << "Fatal Error:\n  Cannot parse line #" << line_number << " of " << filename << "\n";
+                std::cerr << " --> " << line << "\n";
+                throw std::runtime_error("File Parsing Error: Invalid file");
+            }
+        }
+        size_t q;
+        IOCell cell ;
+        size_t index;
+        std::istringstream is( line );
+        size_t v;
+        // Read dimension
+        is >> q;
+//        // Read vertex indices
+//        while ( is >> v )
+//            cell.push_back(v);
+//        // Sort the vector of indices
+//        std::sort(cell.begin(), cell.end());
+//
+//        // Add the index of cell to cells_loaded
+//        cells_loaded[q].push_back(K.cell_to_index(Homological_discrete_vector_field::Simplex(cell)));
+        is >> index;
+        cells_loaded[q].push_back(index);
+    }
+
+    infile.close();
+    // Return corresponding Sub_chain_complex_mask
+    // TODO: provide computation of is_sub_chain_complex properly
+    return Homological_discrete_vector_field::Sub_chain_complex_mask<ChainComplex>(K,cells_loaded,false);
 }
 
 } /* end namespace IO */

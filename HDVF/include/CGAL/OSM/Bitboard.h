@@ -701,6 +701,30 @@ public:
     }
 
     /**
+     * \brief Tests if the Bitboard is empty.
+     */
+    bool is_empty() const {
+        bool empty = true;
+        for (auto bb : boards) {
+            if (!(empty = (bb == 0)))
+                return false;
+        }
+        return true;
+    }
+
+    /**
+     * \brief Tests if the Bitboard is full.
+     */
+    bool is_full() const {
+        bool full = true;
+        for (auto bb : boards) {
+            if (!(full = (bb == -1)))
+                return false;
+        }
+        return true;
+    }
+
+    /**
      * \brief Returns the size of the `Bitboard`.
      */
     size_t size() const { return _size ; }

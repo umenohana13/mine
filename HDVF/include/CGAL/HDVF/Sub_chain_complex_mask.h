@@ -98,7 +98,7 @@ private:
         }
         // Call recursively
         if (rec_needed)
-            down_closure(faces, _K);
+            down_closure(faces);
     }
 
     /** Load a set of cells (without closure).
@@ -169,9 +169,9 @@ public:
 
         // Set bits
         if (close)
-            down_closure(cells, K) ;
+            down_closure(cells) ;
         else
-            set_cells(cells, K) ;
+            set_cells(cells) ;
 
         for (int q=0; q<=K.dimension(); ++q)
         {
@@ -284,6 +284,63 @@ public:
             _sub.at(q) = OSM::Bitboard(_sub.at(q).size(), false);
     }
 
+    /** \brief ANDs (compute intersection) with a Sub_chain_complex_mask. */
+
+    Sub_chain_complex_mask& operator&=(const Sub_chain_complex_mask& other) {
+        for (int q=0; q<=_dim; ++q)
+            _sub.at(q) &= other._sub.at(q);
+        return *this;
+    }
+
+    /** \brief ORs (compute union) with a Sub_chain_complex_mask. */
+
+    Sub_chain_complex_mask& operator|=(const Sub_chain_complex_mask& other) {
+        for (int q=0; q<=_dim; ++q)
+            _sub.at(q) |= other._sub.at(q);
+        return *this;
+    }
+
+    /** \brief Checks if a Sub_chain_complex_mask is closed under the face operation. */
+
+    bool is_down_closed() const {
+        int q = _dim ;
+        bool closed = true;
+        while ((q>=1) && closed) {
+            for (OSM::Bitboard::iterator it = _sub.at(q).begin(); closed && (it != _sub.at(q).end()); ++it) {
+                // Compute the boundary of the cell (q, *it)
+                OSM::Sparse_chain<Coefficient_ring, OSM::COLUMN> bnd(_K.d(*it,q));
+                // Check that all its faces belong to the q-1 mask
+                for (typename OSM::Sparse_chain<Coefficient_ring, OSM::COLUMN>::const_iterator it = bnd.cbegin(); closed && (it != bnd.cend()); ++it)
+                {
+                    const int c(it->first) ;
+                    closed = _sub.at(q-1).is_on(c);
+                }
+            }
+            --q;
+        }
+        return closed;
+    }
+
+    /** \brief Checks if a Sub_chain_complex_mask is empty. */
+
+    bool is_empty() const {
+        bool empty = true;
+        for (int q=0; empty && (q<=_dim); ++q) {
+            empty = _sub.at(q).is_empty();
+        }
+        return empty;
+    }
+
+    /** \brief Checks if a Sub_chain_complex_mask is full. */
+
+    bool is_full() const {
+        bool full = true;
+        for (int q=0; full && (q<=_dim); ++q) {
+            full = _sub.at(q).is_full();
+        }
+        return full;
+    }
+
     /** \brief Screens a sequence of `OSM::Sub_sparse_matrix` (in each dimension).
      *
      * Given a sequence of matrices (vector of `OSM::Sub_sparse_matrices`) sets the masks of `Sub_sparse_matrices` in each dimension to the current `Sub_chain_complex_mask`.
@@ -344,6 +401,24 @@ public:
         }
     }
 };
+
+/** \brief ANDs (compute intersection) with a Sub_chain_complex_mask. */
+
+template <typename ChainComplex>
+Sub_chain_complex_mask<ChainComplex> operator&(const Sub_chain_complex_mask<ChainComplex>& first, const Sub_chain_complex_mask<ChainComplex>& second) {
+    Sub_chain_complex_mask<ChainComplex> res(first);
+    res &= second;
+    return res;
+}
+
+/** \brief ORs (compute union) with a Sub_chain_complex_mask. */
+
+template <typename ChainComplex>
+Sub_chain_complex_mask<ChainComplex> operator|(const Sub_chain_complex_mask<ChainComplex>& first, const Sub_chain_complex_mask<ChainComplex>& second) {
+    Sub_chain_complex_mask<ChainComplex> res(first);
+    res |= second;
+    return res;
+}
 
 } /* end namespace Homological_discrete_vector_field */
 } /* end namespace CGAL */

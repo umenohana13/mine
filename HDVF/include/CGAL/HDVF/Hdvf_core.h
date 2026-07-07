@@ -1227,6 +1227,7 @@ std::ostream& Hdvf_core<ChainComplex>::write_matrices(std::ostream& out, int dim
 // find a valid Cell_pair for A in dimension q
 template<typename ChainComplex>
 Cell_pair Hdvf_core<ChainComplex>::find_pair_A(int q, bool &found) const {
+    std::cout << "here" << std::endl;
     found = false;
     Cell_pair p;
 
