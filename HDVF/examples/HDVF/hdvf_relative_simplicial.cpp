@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 {
     std::string filename, subset_root_name, nodes_file ;
     size_t n_subs;
-    if (argc != 5) std::cout << "usage: dual_hdvf_simplicial mesh_file subset_root_name number_of_subsets nodes_file" << std::endl;
+    if (argc != 5) std::cout << "usage: hdvf_relative_simplicial mesh_file subset_root_name number_of_subsets nodes_file" << std::endl;
     else {
         filename = argv[1];
         subset_root_name = argv[2];
